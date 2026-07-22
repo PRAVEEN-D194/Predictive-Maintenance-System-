@@ -1,0 +1,6 @@
+{
+    "Logistic Regression": 0.9675,
+    "Decision Tree": 0.9775,
+    "Random Forest": 0.984,
+    "SVM": 0.972
+}
