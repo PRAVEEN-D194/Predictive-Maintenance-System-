@@ -1,0 +1,19 @@
++---------------------+---------------------------+-------------------------------+------------------------------+
+| Feature             | Healthy                   | Warning                       | Critical                     |
++---------------------+---------------------------+-------------------------------+------------------------------+
+| Air Temperature     | 295 K – 302 K            | 302 K – 304 K                | > 304 K                      |
+| Process Temperature | 305 K – 312 K            | 312 K – 314 K                | > 314 K                      |
+| Rotational Speed    | 1400 – 1800 rpm          | 1200 – 1400 rpm              | < 1200 rpm                   |
+|                     |                           | or 1800 – 2200 rpm           | or > 2200 rpm                |
+| Torque              | 20 – 50 Nm               | 50 – 60 Nm                   | > 60 Nm                      |
+| Tool Wear           | 0 – 120 min              | 120 – 180 min                | > 180 min                    |
++---------------------+---------------------------+-------------------------------+------------------------------+
+
+Sensor
+
+Air Temperature      → Temperature Sensor (RTD / LM35 / Thermistor)
+Process Temperature  → RTD (PT100) / Thermocouple
+Rotational Speed     → Rotary Encoder / Hall Effect Sensor / Tachometer
+Torque               → Torque Sensor / Strain Gauge
+Tool Wear            → Tool Wear Sensor / Vision Camera / Vibration Sensor
+Machine Type         → Machine Metadata (No Sensor)
