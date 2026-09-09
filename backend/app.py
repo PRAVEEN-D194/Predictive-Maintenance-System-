@@ -708,11 +708,25 @@ def predict_maintenance():
         features_scaled = scaler.transform([features_raw])
         pred = int(rf_model.predict(features_scaled)[0])
         probabilities = rf_model.predict_proba(features_scaled)[0]
+        failure_prob = float(probabilities[1])
         confidence = float(probabilities[pred])
+        health_score = max(0, min(100, int(round((1.0 - failure_prob) * 100))))
+        
+        if failure_prob >= 0.70 or pred == 1:
+            status_text = "Critical"
+        elif failure_prob >= 0.40:
+            status_text = "High Risk"
+        elif failure_prob >= 0.18:
+            status_text = "Warning"
+        else:
+            status_text = "Healthy"
         
         return jsonify({
             "prediction": "Machine Failure" if pred == 1 else "Healthy",
             "confidence": round(confidence * 100, 1),
+            "failure_probability": round(failure_prob * 100, 1),
+            "health_score": health_score,
+            "status": status_text,
             "is_failure": pred == 1
         })
     except Exception as e:
