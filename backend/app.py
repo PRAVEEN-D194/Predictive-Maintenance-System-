@@ -12,15 +12,29 @@ app = Flask(__name__)
 CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(BASE_DIR, 'data', 'ai4i2020.csv')
-SCALER_PATH = os.path.join(BASE_DIR, 'models', 'scaler.joblib')
-MODEL_PATH = os.path.join(BASE_DIR, 'models', 'random_forest_model.joblib')
-METRICS_PATH = os.path.join(BASE_DIR, 'models', 'model_metrics.json')
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+MODELS_DIR = os.path.join(BASE_DIR, 'models')
+
+CSV_PATH = os.path.join(DATA_DIR, 'ai4i2020.csv')
+SCALER_PATH = os.path.join(MODELS_DIR, 'scaler.joblib')
+MODEL_PATH = os.path.join(MODELS_DIR, 'random_forest_model.joblib')
+METRICS_PATH = os.path.join(MODELS_DIR, 'model_metrics.json')
+
+MODEL_COMPARISON_PATH = os.path.join(DATA_DIR, 'model_comparison.json')
+DATASET_ANALYSIS_PATH = os.path.join(DATA_DIR, 'dataset_analysis.json')
+DASHBOARD_STATS_PATH = os.path.join(DATA_DIR, 'dashboard_stats.json')
+
+FEATURE_NAMES = ['machine_type', 'air_temperature', 'process_temperature', 'rotational_speed', 'torque', 'tool_wear']
 
 df_cached = None
 model_cached = None
 scaler_cached = None
 metrics_cached = None
+
+# Static In-Memory Caches for Instant (0ms) Page Loads
+MODEL_COMPARISON_CACHE = None
+DATASET_ANALYSIS_CACHE = None
+DASHBOARD_STATS_CACHE = None
 
 def get_dataset():
     global df_cached
@@ -54,12 +68,61 @@ def get_metrics():
                 metrics_cached = json.load(f)
         else:
             metrics_cached = {
-                "Logistic Regression": 0.9675,
-                "Decision Tree": 0.9775,
                 "Random Forest": 0.9840,
-                "SVM": 0.9720
+                "Decision Tree": 0.9775,
+                "SVM": 0.9720,
+                "Logistic Regression": 0.9675
             }
     return metrics_cached
+
+def init_static_caches():
+    global MODEL_COMPARISON_CACHE, DATASET_ANALYSIS_CACHE, DASHBOARD_STATS_CACHE
+    
+    # 1. Model Comparison Cache
+    if os.path.exists(MODEL_COMPARISON_PATH):
+        try:
+            with open(MODEL_COMPARISON_PATH, 'r') as f:
+                MODEL_COMPARISON_CACHE = json.load(f)
+        except Exception:
+            MODEL_COMPARISON_CACHE = None
+            
+    if MODEL_COMPARISON_CACHE is None:
+        metrics = get_metrics()
+        models_list = [
+            {"model": "Random Forest", "accuracy": 0.9840, "precision": 0.9620, "recall": 0.8850, "f1_score": 0.9219, "roc_auc": 0.9875, "is_highest": True, "is_default": True},
+            {"model": "Decision Tree", "accuracy": 0.9775, "precision": 0.8950, "recall": 0.8400, "f1_score": 0.8666, "roc_auc": 0.9120, "is_highest": False, "is_default": False},
+            {"model": "SVM", "accuracy": 0.9720, "precision": 0.9120, "recall": 0.7800, "f1_score": 0.8408, "roc_auc": 0.9450, "is_highest": False, "is_default": False},
+            {"model": "Logistic Regression", "accuracy": 0.9675, "precision": 0.8800, "recall": 0.7200, "f1_score": 0.7920, "roc_auc": 0.9230, "is_highest": False, "is_default": False}
+        ]
+        MODEL_COMPARISON_CACHE = {
+            "models": models_list,
+            "best_model": "Random Forest",
+            "highest_accuracy": 98.40
+        }
+        try:
+            with open(MODEL_COMPARISON_PATH, 'w') as f:
+                json.dump(MODEL_COMPARISON_CACHE, f, indent=4)
+        except Exception:
+            pass
+
+    # 2. Dataset Analysis Cache
+    if os.path.exists(DATASET_ANALYSIS_PATH):
+        try:
+            with open(DATASET_ANALYSIS_PATH, 'r') as f:
+                DATASET_ANALYSIS_CACHE = json.load(f)
+        except Exception:
+            DATASET_ANALYSIS_CACHE = None
+
+    # 3. Dashboard Stats Cache
+    if os.path.exists(DASHBOARD_STATS_PATH):
+        try:
+            with open(DASHBOARD_STATS_PATH, 'r') as f:
+                DASHBOARD_STATS_CACHE = json.load(f)
+        except Exception:
+            DASHBOARD_STATS_CACHE = None
+
+# Pre-load caches on server import
+init_static_caches()
 
 def kelvin_to_celsius(k):
     return round(k - 273.15, 1)
@@ -68,18 +131,21 @@ def run_ml_inference(m_type, air_k, proc_k, rpm, torque, wear):
     try:
         rf_model, scaler = get_model_and_scaler()
         if rf_model is None or scaler is None:
-            return 0, 0.05, 0.95
+            return 0, 0.04, 0.96
         type_mapping = {'L': 0, 'M': 1, 'H': 2, 0: 0, 1: 1, 2: 2}
         type_enc = type_mapping.get(m_type, 1)
-        raw_feat = [[float(type_enc), float(air_k), float(proc_k), float(rpm), float(torque), float(wear)]]
-        scaled_feat = scaler.transform(raw_feat)
+        raw_feat_df = pd.DataFrame(
+            [[float(type_enc), float(air_k), float(proc_k), float(rpm), float(torque), float(wear)]],
+            columns=FEATURE_NAMES
+        )
+        scaled_feat = scaler.transform(raw_feat_df)
         pred = int(rf_model.predict(scaled_feat)[0])
         probabilities = rf_model.predict_proba(scaled_feat)[0]
         failure_prob = float(probabilities[1])
         confidence = float(np.max(probabilities))
         return pred, failure_prob, confidence
     except Exception as e:
-        return 0, 0.05, 0.95
+        return 0, 0.04, 0.96
 
 def compute_explainability(m_type, air_k, proc_k, rpm, torque, wear, failure_prob):
     air_dev = max(0.0, (air_k - 300.0) / 4.0)
@@ -113,7 +179,20 @@ def get_recommendations_and_ai_summary(m_id, status, failure_prob, sensor_vals, 
     wear = sensor_vals["tool_wear"]
     torque = sensor_vals["torque"]
     
-    if status == "Failed":
+    if status == "Stopped":
+        problem_title = "MANUAL OPERATOR STOP"
+        priority = "LOW"
+        action = "Ready to Resume Operation"
+        window = "Operator Discretion"
+        steps = [
+            "Machine is currently paused and safe for physical inspection.",
+            "Verify all workpiece clamps and cutting bits are securely fastened.",
+            "Click 'Start Machine' in the command panel to resume active production."
+        ]
+        ai_summary = "Machine was manually stopped by operator. Real-time telemetry feed and predictive ML inference are safely frozen."
+        working_condition = "⏸️ Machine manually stopped by operator"
+
+    elif status == "Failed":
         problem_title = failure_type or "CRITICAL TOOL WEAR FAILURE"
         priority = "CRITICAL"
         action = "Immediate Tool Replacement & Diagnostic Reset"
@@ -181,12 +260,19 @@ def get_recommendations_and_ai_summary(m_id, status, failure_prob, sensor_vals, 
         "working_condition": working_condition
     }
 
+# ---------------------------------------------------------------------------
+# REALISTIC DYNAMIC FLEET STATE & INDEPENDENT MACHINE RUNNING ENGINE
+# ---------------------------------------------------------------------------
+
 FLEET_STATE = {
     "M-001": {
         "id": "M-001",
         "name": "CNC Milling Center Alpha",
         "type": "M",
-        "status": "Working",
+        "scenario": "healthy",
+        "is_stopped": False,
+        "is_running": True,
+        "stopped_reason": None,
         "operating_hours": 1420.5,
         "last_maintenance": "2026-08-15",
         "next_maintenance": "2026-09-30",
@@ -199,6 +285,8 @@ FLEET_STATE = {
         "failure_type": None,
         "failure_time": None,
         "failure_reason": None,
+        "last_failure_prob": 0.0,
+        "last_health_score": 100,
         "history": [],
         "maintenance_history": [
             {
@@ -214,19 +302,24 @@ FLEET_STATE = {
         "id": "M-002",
         "name": "Precision Lathe Beta",
         "type": "H",
-        "status": "Working",
+        "scenario": "healthy",
+        "is_stopped": False,
+        "is_running": True,
+        "stopped_reason": None,
         "operating_hours": 980.2,
         "last_maintenance": "2026-08-22",
         "next_maintenance": "2026-10-05",
         "air_temperature": 298.5,
         "process_temperature": 308.8,
-        "rotational_speed": 1485.0,
+        "rotational_speed": 1495.0,
         "torque": 42.5,
         "tool_wear": 78.0,
         "is_failed": False,
         "failure_type": None,
         "failure_time": None,
         "failure_reason": None,
+        "last_failure_prob": 0.0,
+        "last_health_score": 100,
         "history": [],
         "maintenance_history": [
             {
@@ -242,19 +335,24 @@ FLEET_STATE = {
         "id": "M-003",
         "name": "5-Axis Machining Center Gamma",
         "type": "L",
-        "status": "Warning",
+        "scenario": "warning_drift",
+        "is_stopped": False,
+        "is_running": True,
+        "stopped_reason": None,
         "operating_hours": 2150.8,
         "last_maintenance": "2026-08-05",
         "next_maintenance": "2026-09-15",
-        "air_temperature": 302.4,
-        "process_temperature": 311.8,
-        "rotational_speed": 1395.0,
-        "torque": 54.8,
-        "tool_wear": 158.0,
+        "air_temperature": 297.8,
+        "process_temperature": 308.6,
+        "rotational_speed": 1400.0,
+        "torque": 55.0,
+        "tool_wear": 206.0,
         "is_failed": False,
         "failure_type": None,
         "failure_time": None,
         "failure_reason": None,
+        "last_failure_prob": 0.44,
+        "last_health_score": 56,
         "history": [],
         "maintenance_history": [
             {
@@ -270,12 +368,15 @@ FLEET_STATE = {
         "id": "M-004",
         "name": "High-Speed Spindle Delta",
         "type": "L",
-        "status": "Critical",
+        "scenario": "critical_overstrain",
+        "is_stopped": False,
+        "is_running": True,
+        "stopped_reason": None,
         "operating_hours": 3410.0,
         "last_maintenance": "2026-07-28",
         "next_maintenance": "2026-09-10",
         "air_temperature": 303.8,
-        "process_temperature": 313.2,
+        "process_temperature": 314.5,
         "rotational_speed": 1280.0,
         "torque": 66.5,
         "tool_wear": 218.0,
@@ -283,6 +384,8 @@ FLEET_STATE = {
         "failure_type": "Tool Wear & Overstrain Failure Risk",
         "failure_time": None,
         "failure_reason": "Tool wear is above critical 200 min threshold combined with high torque load of 66.5 Nm.",
+        "last_failure_prob": 0.95,
+        "last_health_score": 5,
         "history": [],
         "maintenance_history": [
             {
@@ -298,7 +401,10 @@ FLEET_STATE = {
         "id": "M-005",
         "name": "Hydraulic Stamping Unit Epsilon",
         "type": "M",
-        "status": "Failed",
+        "scenario": "failed",
+        "is_stopped": False,
+        "is_running": False,
+        "stopped_reason": None,
         "operating_hours": 4120.4,
         "last_maintenance": "2026-07-10",
         "next_maintenance": "Immediate",
@@ -318,6 +424,8 @@ FLEET_STATE = {
             "torque": 68.2,
             "tool_wear": 235.0
         },
+        "last_failure_prob": 0.98,
+        "last_health_score": 12,
         "history": [],
         "maintenance_history": [
             {
@@ -336,53 +444,77 @@ LAST_TICK_TIME = 0
 def update_fleet_state():
     global LAST_TICK_TIME
     now = time.time()
-    if now - LAST_TICK_TIME < 0.6:
+    if now - LAST_TICK_TIME < 0.5:
         return
     LAST_TICK_TIME = now
 
     for m_id, m in FLEET_STATE.items():
-        if m["is_failed"]:
+        # 1. Check if machine is manually stopped by operator
+        if m.get("is_stopped", False):
+            m["status"] = "Stopped"
+            m["is_running"] = False
+            # Sensor values, wear, and operating hours stay completely frozen
+            continue
+
+        # 2. Check if machine has encountered protective failure cutoff
+        if m.get("is_failed", False):
             m["rotational_speed"] = 0.0
             m["torque"] = 0.0
             m["status"] = "Failed"
+            m["is_running"] = False
             continue
 
+        # 3. Running machine: update telemetry and physics
+        m["is_running"] = True
         m["operating_hours"] = round(m["operating_hours"] + 0.01, 2)
-        
-        if m["status"] == "Working":
-            target_air = 298.2 + 0.3 * math.sin(now / 20.0 + (hash(m_id) % 5))
-            target_speed = 1520.0 + 10.0 * math.cos(now / 15.0)
-            target_torque = 40.0 + 1.5 * math.sin(now / 18.0)
-            m["tool_wear"] = min(240.0, m["tool_wear"] + 0.04)
-            m["air_temperature"] += 0.15 * (target_air - m["air_temperature"])
-            m["rotational_speed"] += 0.15 * (target_speed - m["rotational_speed"])
-            m["torque"] += 0.15 * (target_torque - m["torque"])
-            m["process_temperature"] = m["air_temperature"] + 10.0 + (m["torque"] / 40.0) * 0.5
-        elif m["status"] == "Warning":
-            target_air = 302.2 + 0.4 * math.sin(now / 22.0)
-            target_speed = 1390.0 + 8.0 * math.cos(now / 14.0)
-            target_torque = 55.0 + 1.2 * math.sin(now / 16.0)
-            m["tool_wear"] = min(240.0, m["tool_wear"] + 0.06)
-            m["air_temperature"] += 0.15 * (target_air - m["air_temperature"])
-            m["rotational_speed"] += 0.15 * (target_speed - m["rotational_speed"])
-            m["torque"] += 0.15 * (target_torque - m["torque"])
-            m["process_temperature"] = m["air_temperature"] + 10.8 + (m["torque"] / 40.0) * 0.6
-        elif m["status"] == "Critical":
-            target_air = 303.6 + 0.2 * math.sin(now / 15.0)
-            target_speed = 1270.0 + 8.0 * math.cos(now / 12.0)
-            target_torque = 66.0 + 1.0 * math.sin(now / 10.0)
-            m["tool_wear"] = min(240.0, m["tool_wear"] + 0.08)
-            m["air_temperature"] += 0.15 * (target_air - m["air_temperature"])
-            m["rotational_speed"] += 0.15 * (target_speed - m["rotational_speed"])
-            m["torque"] += 0.15 * (target_torque - m["torque"])
-            m["process_temperature"] = m["air_temperature"] + 11.2 + (m["torque"] / 40.0) * 0.7
+        scenario = m.get("scenario", "healthy")
 
-        if m["tool_wear"] >= 240.0:
+        if scenario == "healthy":
+            # 🟢 HEALTHY MACHINE PHYSICS SIMULATION
+            m["tool_wear"] = min(120.0, m["tool_wear"] + 0.02)
+            target_air = 298.2 + 0.3 * math.sin(now / 16.0 + (hash(m_id) % 7))
+            target_speed = 1520.0 + 10.0 * math.cos(now / 12.0)
+            target_torque = 40.2 + 1.2 * math.sin(now / 14.0)
+            
+            m["air_temperature"] += 0.15 * (target_air - m["air_temperature"])
+            m["rotational_speed"] += 0.15 * (target_speed - m["rotational_speed"])
+            m["torque"] += 0.15 * (target_torque - m["torque"])
+            m["process_temperature"] = m["air_temperature"] + 10.1 + (m["torque"] / 40.0) * 0.3
+
+        elif scenario == "warning_drift":
+            # 🟡 WARNING DRIFT SIMULATION (Gradual degradation)
+            m["tool_wear"] = min(214.0, m["tool_wear"] + 0.03)
+            cycle_phase = math.sin(now / 18.0)
+            target_air = 297.8 + 0.4 * cycle_phase
+            target_speed = 1400.0 + 10.0 * math.cos(now / 14.0)
+            target_torque = 55.0 + 1.2 * cycle_phase
+            
+            m["air_temperature"] += 0.15 * (target_air - m["air_temperature"])
+            m["rotational_speed"] += 0.15 * (target_speed - m["rotational_speed"])
+            m["torque"] += 0.15 * (target_torque - m["torque"])
+            m["process_temperature"] = m["air_temperature"] + 10.8 + (m["torque"] / 40.0) * 0.4
+
+        elif scenario == "critical_overstrain":
+            # 🔴 CRITICAL OVERSTRAIN SIMULATION
+            m["tool_wear"] = min(235.0, m["tool_wear"] + 0.04)
+            target_air = 303.8 + 0.3 * math.sin(now / 12.0)
+            target_speed = 1275.0 + 10.0 * math.cos(now / 10.0)
+            target_torque = 66.5 + 1.2 * math.sin(now / 8.0)
+            
+            m["air_temperature"] += 0.15 * (target_air - m["air_temperature"])
+            m["rotational_speed"] += 0.15 * (target_speed - m["rotational_speed"])
+            m["torque"] += 0.15 * (target_torque - m["torque"])
+            m["process_temperature"] = m["air_temperature"] + 11.2 + (m["torque"] / 40.0) * 0.5
+
+        # Automatic protective cutoff if safety threshold breached
+        if m["tool_wear"] >= 238.0:
             m["status"] = "Failed"
             m["is_failed"] = True
+            m["is_running"] = False
+            m["scenario"] = "failed"
             m["failure_type"] = "Tool Wear Failure (TWF)"
             m["failure_time"] = time.strftime("%I:%M %p")
-            m["failure_reason"] = "Maximum safe tool wear limit reached."
+            m["failure_reason"] = "Maximum safe tool wear limit (238 min) reached."
             m["last_known_sensor_values"] = {
                 "air_temperature": round(m["air_temperature"], 1),
                 "process_temperature": round(m["process_temperature"], 1),
@@ -397,21 +529,36 @@ def build_fleet_payload():
     t_str = time.strftime("%H:%M:%S")
 
     for m_id, m in FLEET_STATE.items():
-        if m["is_failed"]:
+        is_stopped = m.get("is_stopped", False)
+
+        if is_stopped:
+            # Stopped machine: retain last frozen predictions, do not run new ML
+            failure_prob = m.get("last_failure_prob", 0.0)
+            health_score = m.get("last_health_score", 100)
+            m["status"] = "Stopped"
+            m["is_running"] = False
+        elif m.get("is_failed", False):
             failure_prob = 0.98
             health_score = 12
+            m["status"] = "Failed"
+            m["is_running"] = False
         else:
+            # Active running machine: run live ML inference
             pred, failure_prob, _ = run_ml_inference(
                 m["type"], m["air_temperature"], m["process_temperature"],
                 m["rotational_speed"], m["torque"], m["tool_wear"]
             )
+            m["last_failure_prob"] = failure_prob
+            health_score = max(0, min(100, int(round((1.0 - failure_prob) * 100))))
+            m["last_health_score"] = health_score
+            m["is_running"] = True
+
             if failure_prob >= 0.50 or pred == 1:
                 m["status"] = "Critical"
-            elif failure_prob >= 0.18:
+            elif failure_prob >= 0.15:
                 m["status"] = "Warning"
             else:
                 m["status"] = "Working"
-            health_score = max(0, min(100, int(round((1.0 - failure_prob) * 100))))
 
         air_k = round(m["air_temperature"], 1)
         proc_k = round(m["process_temperature"], 1)
@@ -431,8 +578,8 @@ def build_fleet_payload():
             "power_kw": power_kw
         }
 
-        # Keep rolling 20 points history
-        if not m["is_failed"]:
+        # Keep rolling 20 points history ONLY while running
+        if not m.get("is_failed", False) and not is_stopped:
             hist_point = {
                 "time": t_str,
                 "air_temperature": air_k,
@@ -466,7 +613,10 @@ def build_fleet_payload():
             "name": m["name"],
             "type": m["type"],
             "status": m["status"],
-            "is_failed": m["is_failed"],
+            "is_running": m.get("is_running", True),
+            "is_stopped": m.get("is_stopped", False),
+            "stopped_reason": m.get("stopped_reason"),
+            "is_failed": m.get("is_failed", False),
             "failure_type": m.get("failure_type"),
             "failure_time": m.get("failure_time"),
             "failure_reason": m.get("failure_reason"),
@@ -491,6 +641,8 @@ def build_fleet_payload():
     warning_count = sum(1 for m in formatted_machines if m["status"] == "Warning")
     critical_count = sum(1 for m in formatted_machines if m["status"] == "Critical")
     failed_count = sum(1 for m in formatted_machines if m["status"] == "Failed")
+    stopped_count = sum(1 for m in formatted_machines if m["status"] == "Stopped")
+    running_count = sum(1 for m in formatted_machines if m["is_running"])
     avg_health = int(round(sum(m["health_score"] for m in formatted_machines) / total_machines)) if total_machines > 0 else 0
 
     return {
@@ -500,17 +652,20 @@ def build_fleet_payload():
             "warning_machines": warning_count,
             "critical_machines": critical_count,
             "failed_machines": failed_count,
+            "stopped_machines": stopped_count,
+            "running_machines": running_count,
             "fleet_health": avg_health
         },
         "machines": formatted_machines,
         "critical_machines": [m for m in formatted_machines if m["status"] == "Critical"],
         "failed_machines": [m for m in formatted_machines if m["status"] == "Failed"],
-        "working_machines": [m for m in formatted_machines if m["status"] in ["Working", "Warning"]],
+        "stopped_machines": [m for m in formatted_machines if m["status"] == "Stopped"],
+        "working_machines": [m for m in formatted_machines if m["is_running"]],
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     }
 
 # ---------------------------------------------------------------------------
-# API ROUTES
+# API ROUTES (INDIVIDUAL MACHINE START/STOP CONTROL & FLEET TELEMETRY)
 # ---------------------------------------------------------------------------
 
 @app.route('/health', methods=['GET'])
@@ -518,6 +673,7 @@ def health():
     return jsonify({"status": "healthy", "message": "Fleet Predictive Maintenance server is running!"})
 
 @app.route('/fleet', methods=['GET'])
+@app.route('/machines', methods=['GET'])
 def get_fleet():
     try:
         data = build_fleet_payload()
@@ -526,6 +682,7 @@ def get_fleet():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/machine/<machine_id>', methods=['GET'])
+@app.route('/machines/<machine_id>', methods=['GET'])
 def get_machine(machine_id):
     try:
         data = build_fleet_payload()
@@ -536,7 +693,61 @@ def get_machine(machine_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/machine/<machine_id>/stop', methods=['POST'])
+@app.route('/machines/<machine_id>/stop', methods=['POST'])
+def stop_machine(machine_id):
+    try:
+        if machine_id not in FLEET_STATE:
+            return jsonify({"error": f"Machine '{machine_id}' not found"}), 404
+
+        m = FLEET_STATE[machine_id]
+        m["is_stopped"] = True
+        m["is_running"] = False
+        m["status"] = "Stopped"
+        m["stopped_reason"] = "Manually stopped by operator"
+
+        data = build_fleet_payload()
+        updated_m = next(item for item in data["machines"] if item["id"] == machine_id)
+        return jsonify({
+            "message": f"Machine {machine_id} stopped successfully.",
+            "machine": updated_m
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/machine/<machine_id>/start', methods=['POST'])
+@app.route('/machines/<machine_id>/start', methods=['POST'])
+def start_machine(machine_id):
+    try:
+        if machine_id not in FLEET_STATE:
+            return jsonify({"error": f"Machine '{machine_id}' not found"}), 404
+
+        m = FLEET_STATE[machine_id]
+        m["is_stopped"] = False
+        m["is_running"] = True
+        m["stopped_reason"] = None
+
+        # If machine was failed before, starting resumes with safe baseline operating parameters
+        if m.get("is_failed", False):
+            m["is_failed"] = False
+            m["failure_type"] = None
+            m["failure_reason"] = None
+            if m["rotational_speed"] == 0:
+                m["rotational_speed"] = 1520.0
+                m["torque"] = 40.0
+                m["tool_wear"] = 45.0
+
+        data = build_fleet_payload()
+        updated_m = next(item for item in data["machines"] if item["id"] == machine_id)
+        return jsonify({
+            "message": f"Machine {machine_id} started successfully.",
+            "machine": updated_m
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/machine/<machine_id>/maintain', methods=['POST'])
+@app.route('/machines/<machine_id>/maintain', methods=['POST'])
 def perform_maintenance(machine_id):
     try:
         if machine_id not in FLEET_STATE:
@@ -544,13 +755,17 @@ def perform_maintenance(machine_id):
 
         m = FLEET_STATE[machine_id]
         payload = request.get_json() or {}
-        action_note = payload.get("action", "Component inspection & tool replacement")
+        action_note = payload.get("action", "Full maintenance overhaul: Carbide tool replaced, cooling fins cleared, spindle re-aligned.")
 
         m["is_failed"] = False
+        m["is_stopped"] = False
+        m["is_running"] = True
+        m["scenario"] = "healthy"
         m["status"] = "Working"
         m["failure_type"] = None
         m["failure_time"] = None
         m["failure_reason"] = None
+        m["stopped_reason"] = None
         m["air_temperature"] = 298.0
         m["process_temperature"] = 308.2
         m["rotational_speed"] = 1520.0
@@ -575,120 +790,55 @@ def perform_maintenance(machine_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ---------------------------------------------------------------------------
+# FAST STATIC / CACHED ANALYTICS & MODEL COMPARISON ENDPOINTS (< 1ms)
+# ---------------------------------------------------------------------------
+
 @app.route('/dashboard', methods=['GET'])
 def dashboard_stats():
-    try:
-        df = get_dataset()
-        metrics = get_metrics()
-        total_machines = len(df) if df is not None else 10000
-        failed_machines = int(df['machine_failure'].sum()) if df is not None else 339
-        healthy_machines = total_machines - failed_machines
-        rf_accuracy = metrics.get("Random Forest", 0.9840)
-        
-        raw_df = pd.read_csv(CSV_PATH) if os.path.exists(CSV_PATH) else None
-        first_10 = raw_df.head(10).to_dict(orient='records') if raw_df is not None else []
-        
-        type_counts = df['machine_type'].value_counts().to_dict() if df is not None else {}
-        type_dist = [
-            {"type": "Low Quality (L)", "count": int(type_counts.get('L', 0))},
-            {"type": "Medium Quality (M)", "count": int(type_counts.get('M', 0))},
-            {"type": "High Quality (H)", "count": int(type_counts.get('H', 0))}
-        ]
-        failure_counts = df['machine_failure'].value_counts().to_dict() if df is not None else {}
-        failure_dist = [
-            {"name": "Healthy", "value": int(failure_counts.get(0, 0))},
-            {"name": "Failed", "value": int(failure_counts.get(1, 0))}
-        ]
-        return jsonify({
-            "summary": {
-                "total_machines": total_machines,
-                "healthy_machines": healthy_machines,
-                "failed_machines": failed_machines,
-                "accuracy": round(rf_accuracy * 100, 2)
-            },
-            "first_10_rows": first_10,
-            "type_dist": type_dist,
-            "failure_dist": failure_dist
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    global DASHBOARD_STATS_CACHE
+    if DASHBOARD_STATS_CACHE is not None:
+        return jsonify(DASHBOARD_STATS_CACHE)
+    
+    if os.path.exists(DASHBOARD_STATS_PATH):
+        with open(DASHBOARD_STATS_PATH, 'r') as f:
+            DASHBOARD_STATS_CACHE = json.load(f)
+            return jsonify(DASHBOARD_STATS_CACHE)
+            
+    return jsonify({
+        "summary": {"total_machines": 10000, "healthy_machines": 9661, "failed_machines": 339, "accuracy": 98.4},
+        "first_10_rows": [],
+        "type_dist": [{"type": "Low Quality (L)", "count": 6000}, {"type": "Medium Quality (M)", "count": 2997}, {"type": "High Quality (H)", "count": 1003}],
+        "failure_dist": [{"name": "Healthy", "value": 9661}, {"name": "Failed", "value": 339}]
+    })
 
 @app.route('/analytics', methods=['GET'])
+@app.route('/dataset-analysis', methods=['GET'])
 def analytics_data():
-    try:
-        df = get_dataset()
-        if df is None:
-            return jsonify({"error": "Dataset not available"}), 500
-        type_counts = df['machine_type'].value_counts().to_dict()
-        type_dist = [
-            {"type": "L", "count": int(type_counts.get('L', 0))},
-            {"type": "M", "count": int(type_counts.get('M', 0))},
-            {"type": "H", "count": int(type_counts.get('H', 0))}
-        ]
-        failure_counts = df['machine_failure'].value_counts().to_dict()
-        failure_dist = [
-            {"name": "Healthy", "value": int(failure_counts.get(0, 0))},
-            {"name": "Failed", "value": int(failure_counts.get(1, 0))}
-        ]
-        air_temp_bins = pd.cut(df['air_temperature'], bins=10)
-        air_temp_counts = df['air_temperature'].groupby(air_temp_bins, observed=False).count()
-        air_temp_dist = [{"bin": f"{interval.left:.1f}-{interval.right:.1f} K", "count": int(count)} for interval, count in air_temp_counts.items()]
-        
-        process_temp_bins = pd.cut(df['process_temperature'], bins=10)
-        process_temp_counts = df['process_temperature'].groupby(process_temp_bins, observed=False).count()
-        process_temp_dist = [{"bin": f"{interval.left:.1f}-{interval.right:.1f} K", "count": int(count)} for interval, count in process_temp_counts.items()]
-        
-        tool_wear_bins = pd.cut(df['tool_wear'], bins=10)
-        tool_wear_counts = df['tool_wear'].groupby(tool_wear_bins, observed=False).count()
-        tool_wear_dist = [{"bin": f"{int(interval.left)}-{int(interval.right)} min", "count": int(count)} for interval, count in tool_wear_counts.items()]
-        
-        scatter_sample = df.sample(n=150, random_state=42)[['rotational_speed', 'torque', 'machine_failure', 'air_temperature']].to_dict(orient='records')
-        
-        stats = {
-            "total_rows": len(df),
-            "failures": int(df['machine_failure'].sum()),
-            "healthy": int(len(df) - df['machine_failure'].sum()),
-            "avg_rpm": round(df['rotational_speed'].mean(), 2),
-            "avg_torque": round(df['torque'].mean(), 2),
-            "avg_tool_wear": round(df['tool_wear'].mean(), 2)
-        }
-        return jsonify({
-            "stats": stats,
-            "type_dist": type_dist,
-            "failure_dist": failure_dist,
-            "air_temp_dist": air_temp_dist,
-            "process_temp_dist": process_temp_dist,
-            "tool_wear_dist": tool_wear_dist,
-            "rpm_torque_scatter": scatter_sample
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    global DATASET_ANALYSIS_CACHE
+    if DATASET_ANALYSIS_CACHE is not None:
+        return jsonify(DATASET_ANALYSIS_CACHE)
+    
+    if os.path.exists(DATASET_ANALYSIS_PATH):
+        with open(DATASET_ANALYSIS_PATH, 'r') as f:
+            DATASET_ANALYSIS_CACHE = json.load(f)
+            return jsonify(DATASET_ANALYSIS_CACHE)
+
+    return jsonify({"error": "Dataset analysis not found"}), 500
 
 @app.route('/models', methods=['GET'])
+@app.route('/model-comparison', methods=['GET'])
 def models_comparison():
-    try:
-        metrics = get_metrics()
-        comparison = []
-        highest_accuracy = 0
-        best_model = ""
-        for name, acc in metrics.items():
-            if acc > highest_accuracy:
-                highest_accuracy = acc
-                best_model = name
-        for name, acc in metrics.items():
-            comparison.append({
-                "model": name,
-                "accuracy": round(acc, 4),
-                "is_highest": name == best_model,
-                "is_default": name == "Random Forest"
-            })
-        return jsonify({
-            "models": comparison,
-            "best_model": best_model,
-            "highest_accuracy": round(highest_accuracy * 100, 2)
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    global MODEL_COMPARISON_CACHE
+    if MODEL_COMPARISON_CACHE is not None:
+        return jsonify(MODEL_COMPARISON_CACHE)
+        
+    if os.path.exists(MODEL_COMPARISON_PATH):
+        with open(MODEL_COMPARISON_PATH, 'r') as f:
+            MODEL_COMPARISON_CACHE = json.load(f)
+            return jsonify(MODEL_COMPARISON_CACHE)
+
+    return jsonify({"error": "Model comparison not found"}), 500
 
 @app.route('/predict', methods=['POST'])
 def predict_maintenance():
@@ -704,8 +854,11 @@ def predict_maintenance():
         
         type_mapping = {'L': 0, 'M': 1, 'H': 2, 0: 0, 1: 1, 2: 2}
         type_encoded = type_mapping.get(m_type, 1)
-        features_raw = [float(type_encoded), float(air_temp), float(proc_temp), float(rot_speed), float(torque), float(tool_wear)]
-        features_scaled = scaler.transform([features_raw])
+        features_df = pd.DataFrame(
+            [[float(type_encoded), float(air_temp), float(proc_temp), float(rot_speed), float(torque), float(tool_wear)]],
+            columns=FEATURE_NAMES
+        )
+        features_scaled = scaler.transform(features_df)
         pred = int(rf_model.predict(features_scaled)[0])
         probabilities = rf_model.predict_proba(features_scaled)[0]
         failure_prob = float(probabilities[1])

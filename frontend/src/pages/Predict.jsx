@@ -68,13 +68,14 @@ const Predict = () => {
       // 2. Update Event Log (Newest events first)
       setEventLog(prev => {
         const newEntry = {
-          id: Date.now() + Math.random(),
+          id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `event-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
           time: timeFormatted,
           status: data.status,
           confidence: `${data.confidence}%`,
           riskLevel: data.risk_level
         };
-        return [newEntry, ...prev].slice(0, 50); // Keep top 50
+        const filtered = prev.filter(e => e.id !== newEntry.id);
+        return [newEntry, ...filtered].slice(0, 50); // Keep top 50
       });
 
       // 3. Update Statistics

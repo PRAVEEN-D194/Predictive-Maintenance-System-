@@ -50,10 +50,11 @@ const LiveMonitoring = ({ fleetData, isLoading, error, onRefresh, onSelectMachin
     );
   }
 
-  const { summary, working_machines, failed_machines } = fleetData || {
+  const { summary, working_machines, failed_machines, stopped_machines } = fleetData || {
     summary: { total_machines: 5, working_machines: 3 },
     working_machines: [],
-    failed_machines: []
+    failed_machines: [],
+    stopped_machines: []
   };
 
   return (
@@ -75,21 +76,34 @@ const LiveMonitoring = ({ fleetData, isLoading, error, onRefresh, onSelectMachin
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-xs font-mono bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm text-slate-700">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Active Online: <strong>{working_machines?.length || 0}</strong> / {summary?.total_machines || 5}</span>
+            <span>Active Running: <strong>{working_machines?.length || 0}</strong> / {summary?.total_machines || 5}</span>
           </div>
         </div>
       </div>
 
-      {/* Notice for failed machines */}
-      {failed_machines && failed_machines.length > 0 && (
-        <div className="bg-slate-100 border border-slate-300 p-3 rounded-lg flex items-center justify-between text-xs text-slate-700">
+      {/* Notice for stopped machines */}
+      {stopped_machines && stopped_machines.length > 0 && (
+        <div className="bg-slate-100 border border-slate-300 p-3.5 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-slate-700">
           <div className="flex items-center gap-2">
-            <Info className="w-4 h-4 text-slate-500" />
+            <Info className="w-4 h-4 text-slate-500 shrink-0" />
             <span>
-              <strong>{failed_machines.length} machine(s) offline</strong> ({failed_machines.map(m => m.id).join(', ')}) excluded from active live telemetry feed.
+              <strong>{stopped_machines.length} machine(s) manually stopped</strong> ({stopped_machines.map(m => m.id).join(', ')}). Telemetry feed paused.
             </span>
           </div>
-          <span className="text-[11px] font-mono text-slate-500">In Maintenance Queue</span>
+          <span className="text-[11px] font-mono text-slate-500">Available in Dashboard & Diagnostics</span>
+        </div>
+      )}
+
+      {/* Notice for failed machines */}
+      {failed_machines && failed_machines.length > 0 && (
+        <div className="bg-rose-50 border border-rose-200 p-3 rounded-lg flex items-center justify-between text-xs text-rose-800">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>
+              <strong>{failed_machines.length} machine(s) protective shutdown</strong> ({failed_machines.map(m => m.id).join(', ')}) excluded from live feed.
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-rose-700">Maintenance Overhaul Required</span>
         </div>
       )}
 
@@ -97,7 +111,7 @@ const LiveMonitoring = ({ fleetData, isLoading, error, onRefresh, onSelectMachin
       {!working_machines || working_machines.length === 0 ? (
         <div className="bg-white p-8 rounded-lg border border-slate-200 text-center space-y-2">
           <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
-          <h3 className="text-sm font-bold text-slate-800">No Machines Currently Online</h3>
+          <h3 className="text-sm font-bold text-slate-800">No Machines Currently Running</h3>
           <p className="text-xs text-slate-500">All fleet machines are currently stopped or awaiting maintenance overhaul.</p>
         </div>
       ) : (

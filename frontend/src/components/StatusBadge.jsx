@@ -7,10 +7,14 @@ export const StatusBadge = ({ status, size = 'md' }) => {
   let dotColor = 'bg-slate-500';
   let label = status || 'Unknown';
 
-  if (normalized === 'working' || normalized === 'healthy') {
+  if (normalized === 'stopped') {
+    colorStyles = 'bg-slate-100 text-slate-700 border-slate-300';
+    dotColor = 'bg-slate-500';
+    label = 'Stopped';
+  } else if (normalized === 'working' || normalized === 'healthy' || normalized === 'running') {
     colorStyles = 'bg-emerald-50 text-emerald-800 border-emerald-200';
     dotColor = 'bg-emerald-500';
-    label = 'Working';
+    label = 'Running';
   } else if (normalized === 'warning') {
     colorStyles = 'bg-amber-50 text-amber-800 border-amber-200';
     dotColor = 'bg-amber-500';
@@ -20,9 +24,9 @@ export const StatusBadge = ({ status, size = 'md' }) => {
     dotColor = 'bg-rose-500';
     label = 'Critical';
   } else if (normalized === 'failed' || normalized === 'not working') {
-    colorStyles = 'bg-slate-900 text-slate-100 border-slate-700';
+    colorStyles = 'bg-rose-950 text-rose-100 border-rose-800';
     dotColor = 'bg-rose-500';
-    label = 'Not Working / Failed';
+    label = 'Failed';
   }
 
   const sizeClasses = size === 'sm' 

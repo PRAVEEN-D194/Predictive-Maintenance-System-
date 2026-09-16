@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -9,11 +9,77 @@ import {
   Database,
   Cpu,
   Wrench,
-  ShieldAlert
+  ShieldAlert,
+  Play,
+  Square
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 
-const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine }) => {
+const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine, addToast }) => {
+  const [actionLoading, setActionLoading] = useState({});
+
+  const handleStartMachine = async (e, machineId) => {
+    if (e) e.stopPropagation();
+    setActionLoading((prev) => ({ ...prev, [machineId]: 'starting' }));
+    try {
+      const res = await fetch(`http://127.0.0.1:5000/machine/${machineId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to start machine');
+      if (onRefresh) onRefresh();
+      if (addToast) {
+        addToast({
+          title: `Machine ${machineId} Started`,
+          message: `Machine ${machineId} started successfully. Live telemetry resumed.`,
+          type: 'success'
+        });
+      }
+    } catch (err) {
+      if (addToast) {
+        addToast({
+          title: 'Start Command Error',
+          message: err.message,
+          type: 'error'
+        });
+      }
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [machineId]: null }));
+    }
+  };
+
+  const handleStopMachine = async (e, machineId) => {
+    if (e) e.stopPropagation();
+    setActionLoading((prev) => ({ ...prev, [machineId]: 'stopping' }));
+    try {
+      const res = await fetch(`http://127.0.0.1:5000/machine/${machineId}/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to stop machine');
+      if (onRefresh) onRefresh();
+      if (addToast) {
+        addToast({
+          title: `Machine ${machineId} Stopped`,
+          message: `Machine ${machineId} stopped successfully. Telemetry paused.`,
+          type: 'info'
+        });
+      }
+    } catch (err) {
+      if (addToast) {
+        addToast({
+          title: 'Stop Command Error',
+          message: err.message,
+          type: 'error'
+        });
+      }
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [machineId]: null }));
+    }
+  };
+
   if (isLoading && !fleetData) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 min-h-screen">
@@ -41,20 +107,21 @@ const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine }) 
     );
   }
 
-  const { summary, machines, critical_machines, failed_machines, timestamp } = fleetData || {
-    summary: { total_machines: 5, working_machines: 3, warning_machines: 1, critical_machines: 1, failed_machines: 1, fleet_health: 68 },
+  const { summary, machines, critical_machines, failed_machines, stopped_machines, timestamp } = fleetData || {
+    summary: { total_machines: 5, working_machines: 3, warning_machines: 1, critical_machines: 1, failed_machines: 0, stopped_machines: 0, fleet_health: 68 },
     machines: [],
     critical_machines: [],
     failed_machines: [],
+    stopped_machines: [],
     timestamp: ''
   };
 
   const kpis = [
     { label: 'Total Machines', value: summary.total_machines, icon: Database, color: 'text-slate-900', border: 'border-slate-200' },
-    { label: 'Working Machines', value: summary.working_machines, icon: CheckCircle2, color: 'text-emerald-700', border: 'border-emerald-200 bg-emerald-50/40' },
+    { label: 'Running Machines', value: summary.running_machines !== undefined ? summary.running_machines : summary.working_machines, icon: CheckCircle2, color: 'text-emerald-700', border: 'border-emerald-200 bg-emerald-50/40' },
     { label: 'Critical Machines', value: summary.critical_machines, icon: AlertOctagon, color: 'text-rose-700', border: summary.critical_machines > 0 ? 'border-rose-200 bg-rose-50/50' : 'border-slate-200' },
     { label: 'Warning Machines', value: summary.warning_machines, icon: AlertTriangle, color: 'text-amber-700', border: summary.warning_machines > 0 ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200' },
-    { label: 'Failed / Not Working', value: summary.failed_machines, icon: Wrench, color: 'text-slate-800', border: 'border-slate-200 bg-slate-100/60' },
+    { label: 'Stopped Machines', value: summary.stopped_machines || 0, icon: Square, color: 'text-slate-600', border: 'border-slate-200 bg-slate-100/60' },
     { label: 'Fleet Health Score', value: `${summary.fleet_health}%`, icon: Activity, color: 'text-blue-700', border: 'border-blue-200 bg-blue-50/40' }
   ];
 
@@ -207,6 +274,41 @@ const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine }) 
                 <StatusBadge status={m.status} size="sm" />
               </div>
 
+              {/* Machine Individual Run/Stop Control Banner */}
+              <div className="flex items-center justify-between bg-slate-50/80 px-2.5 py-1.5 rounded-md border border-slate-200/80 text-xs">
+                {m.status === 'Stopped' || m.is_stopped ? (
+                  <div className="flex items-center gap-1.5 font-medium text-slate-600 font-mono text-[11px]">
+                    <span className="w-2 h-2 rounded-[2px] bg-slate-500" />
+                    <span>■ Stopped</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 font-medium text-emerald-700 font-mono text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>● Running</span>
+                  </div>
+                )}
+
+                {m.status === 'Stopped' || m.is_stopped ? (
+                  <button
+                    onClick={(e) => handleStartMachine(e, m.id)}
+                    disabled={actionLoading[m.id] === 'starting'}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold shadow-xs transition disabled:opacity-50"
+                  >
+                    <Play className="w-3 h-3 fill-current" />
+                    <span>{actionLoading[m.id] === 'starting' ? 'Starting...' : 'Start Machine'}</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => handleStopMachine(e, m.id)}
+                    disabled={actionLoading[m.id] === 'stopping'}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-slate-700 border border-slate-300 rounded text-xs font-semibold transition disabled:opacity-50"
+                  >
+                    <Square className="w-3 h-3 fill-current" />
+                    <span>{actionLoading[m.id] === 'stopping' ? 'Stopping...' : 'Stop Machine'}</span>
+                  </button>
+                )}
+              </div>
+
               {/* KPI Metrics */}
               <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded border border-slate-100">
                 <div>
@@ -227,19 +329,19 @@ const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine }) 
               <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Temperature:</span>
-                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values.air_temperature_c}°C</span>
+                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values?.air_temperature_c ?? '--'}°C</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Speed:</span>
-                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values.rotational_speed} RPM</span>
+                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values?.rotational_speed ?? '--'} RPM</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Torque:</span>
-                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values.torque} Nm</span>
+                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values?.torque ?? '--'} Nm</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Tool Wear:</span>
-                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values.tool_wear} min</span>
+                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values?.tool_wear ?? '--'} min</span>
                 </div>
               </div>
 
@@ -249,7 +351,7 @@ const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine }) 
                   {m.recommendations?.working_condition?.replace(/[🟢🟡🔴⚫]/g, '').trim()}
                 </span>
                 <span className="group-hover:translate-x-1 transition-transform text-slate-900 font-semibold flex items-center gap-1 font-mono">
-                  Details →
+                  Diagnostics →
                 </span>
               </div>
             </div>

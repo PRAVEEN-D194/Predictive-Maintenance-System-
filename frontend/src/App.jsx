@@ -17,7 +17,7 @@ function App() {
   const previousStatusMap = useRef({});
 
   const addToast = useCallback((toast) => {
-    const id = Date.now() + Math.random();
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `toast-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const newToast = {
       id,
       time: new Date().toLocaleTimeString(),
@@ -72,12 +72,15 @@ function App() {
         });
       }
     } catch (err) {
-      if (!fleetData) {
-        setError(err.message || 'Unable to connect to backend server');
-        setIsLoading(false);
-      }
+      setFleetData((current) => {
+        if (!current) {
+          setError(err.message || 'Unable to connect to backend server');
+          setIsLoading(false);
+        }
+        return current;
+      });
     }
-  }, [addToast, fleetData]);
+  }, [addToast]);
 
   useEffect(() => {
     fetchFleet();
@@ -100,6 +103,7 @@ function App() {
             error={error}
             onRefresh={fetchFleet}
             onSelectMachine={handleSelectMachine}
+            addToast={addToast}
           />
         );
       case 'live-monitoring':
@@ -110,6 +114,7 @@ function App() {
             error={error}
             onRefresh={fetchFleet}
             onSelectMachine={handleSelectMachine}
+            addToast={addToast}
           />
         );
       case 'machine-details':
@@ -135,6 +140,7 @@ function App() {
             error={error}
             onRefresh={fetchFleet}
             onSelectMachine={handleSelectMachine}
+            addToast={addToast}
           />
         );
     }

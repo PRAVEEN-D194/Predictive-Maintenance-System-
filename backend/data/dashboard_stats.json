@@ -1,0 +1,194 @@
+{
+    "summary": {
+        "total_machines": 10000,
+        "healthy_machines": 9661,
+        "failed_machines": 339,
+        "accuracy": 98.4
+    },
+    "first_10_rows": [
+        {
+            "UDI": 1,
+            "Product ID": "M14860",
+            "Type": "M",
+            "Air temperature [K]": 298.1,
+            "Process temperature [K]": 308.6,
+            "Rotational speed [rpm]": 1551,
+            "Torque [Nm]": 42.8,
+            "Tool wear [min]": 0,
+            "Machine failure": 0,
+            "TWF": 0,
+            "HDF": 0,
+            "PWF": 0,
+            "OSF": 0,
+            "RNF": 0
+        },
+        {
+            "UDI": 2,
+            "Product ID": "L47181",
+            "Type": "L",
+            "Air temperature [K]": 298.2,
+            "Process temperature [K]": 308.7,
+            "Rotational speed [rpm]": 1408,
+            "Torque [Nm]": 46.3,
+            "Tool wear [min]": 3,
+            "Machine failure": 0,
+            "TWF": 0,
+            "HDF": 0,
+            "PWF": 0,
+            "OSF": 0,
+            "RNF": 0
+        },
+        {
+            "UDI": 3,
+            "Product ID": "L47182",
+            "Type": "L",
+            "Air temperature [K]": 298.1,
+            "Process temperature [K]": 308.5,
+            "Rotational speed [rpm]": 1498,
+            "Torque [Nm]": 49.4,
+            "Tool wear [min]": 5,
+            "Machine failure": 0,
+            "TWF": 0,
+            "HDF": 0,
+            "PWF": 0,
+            "OSF": 0,
+            "RNF": 0
+        },
+        {
+            "UDI": 4,
+            "Product ID": "L47183",
+            "Type": "L",
+            "Air temperature [K]": 298.2,
+            "Process temperature [K]": 308.6,
+            "Rotational speed [rpm]": 1433,
+            "Torque [Nm]": 39.5,
+            "Tool wear [min]": 7,
+            "Machine failure": 0,
+            "TWF": 0,
+            "HDF": 0,
+            "PWF": 0,
+            "OSF": 0,
+            "RNF": 0
+        },
+        {
+            "UDI": 5,
+            "Product ID": "L47184",
+            "Type": "L",
+            "Air temperature [K]": 298.2,
+            "Process temperature [K]": 308.7,
+            "Rotational speed [rpm]": 1408,
+            "Torque [Nm]": 40.0,
+            "Tool wear [min]": 9,
+            "Machine failure": 0,
+            "TWF": 0,
+            "HDF": 0,
+            "PWF": 0,
+            "OSF": 0,
+            "RNF": 0
+        },
+        {
+            "UDI": 6,
+            "Product ID": "M14865",
+            "Type": "M",
+            "Air temperature [K]": 298.1,
+            "Process temperature [K]": 308.6,
+            "Rotational speed [rpm]": 1425,
+            "Torque [Nm]": 41.9,
+            "Tool wear [min]": 11,
+            "Machine failure": 0,
+            "TWF": 0,
+            "HDF": 0,
+            "PWF": 0,
+            "OSF": 0,
+            "RNF": 0
+        },
+        {
+            "UDI": 7,
+            "Product ID": "L47186",
+            "Type": "L",
+            "Air temperature [K]": 298.1,
+            "Process temperature [K]": 308.6,
+            "Rotational speed [rpm]": 1558,
+            "Torque [Nm]": 42.4,
+            "Tool wear [min]": 14,
+            "Machine failure": 0,
+            "TWF": 0,
+            "HDF": 0,
+            "PWF": 0,
+            "OSF": 0,
+            "RNF": 0
+        },
+        {
+            "UDI": 8,
+            "Product ID": "L47187",
+            "Type": "L",
+            "Air temperature [K]": 298.1,
+            "Process temperature [K]": 308.6,
+            "Rotational speed [rpm]": 1527,
+            "Torque [Nm]": 40.2,
+            "Tool wear [min]": 16,
+            "Machine failure": 0,
+            "TWF": 0,
+            "HDF": 0,
+            "PWF": 0,
+            "OSF": 0,
+            "RNF": 0
+        },
+        {
+            "UDI": 9,
+            "Product ID": "M14868",
+            "Type": "M",
+            "Air temperature [K]": 298.3,
+            "Process temperature [K]": 308.7,
+            "Rotational speed [rpm]": 1667,
+            "Torque [Nm]": 28.6,
+            "Tool wear [min]": 18,
+            "Machine failure": 0,
+            "TWF": 0,
+            "HDF": 0,
+            "PWF": 0,
+            "OSF": 0,
+            "RNF": 0
+        },
+        {
+            "UDI": 10,
+            "Product ID": "M14869",
+            "Type": "M",
+            "Air temperature [K]": 298.5,
+            "Process temperature [K]": 309.0,
+            "Rotational speed [rpm]": 1741,
+            "Torque [Nm]": 28.0,
+            "Tool wear [min]": 21,
+            "Machine failure": 0,
+            "TWF": 0,
+            "HDF": 0,
+            "PWF": 0,
+            "OSF": 0,
+            "RNF": 0
+        }
+    ],
+    "type_dist": [
+        {
+            "type": "Low Quality (L)",
+            "count": 6000
+        },
+        {
+            "type": "Medium Quality (M)",
+            "count": 2997
+        },
+        {
+            "type": "High Quality (H)",
+            "count": 1003
+        }
+    ],
+    "failure_dist": [
+        {
+            "name": "Healthy",
+            "value": 9661
+        },
+        {
+            "name": "Failed",
+            "value": 339
+        }
+    ]
+}

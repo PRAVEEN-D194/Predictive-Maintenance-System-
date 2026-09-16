@@ -33,10 +33,71 @@ import StatusBadge from '../components/StatusBadge';
 const MachineDetails = ({ machineId, fleetData, onRefresh, onBack, onNavigateMachine, addToast }) => {
   const [selectedMachine, setSelectedMachine] = useState(machineId || 'M-001');
   const [isMaintaining, setIsMaintaining] = useState(false);
+  const [actionLoading, setActionLoading] = useState(null);
   const [activeChart, setActiveChart] = useState('all');
 
   // Find machine directly from fleetData for instant 0ms rendering
   const machineData = fleetData?.machines?.find((m) => m.id === selectedMachine) || fleetData?.machines?.[0];
+
+  const handleStartMachine = async () => {
+    setActionLoading('starting');
+    try {
+      const res = await fetch(`http://127.0.0.1:5000/machine/${selectedMachine}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to start machine');
+      if (onRefresh) onRefresh();
+      if (addToast) {
+        addToast({
+          title: `Machine ${selectedMachine} Started`,
+          message: `Machine ${selectedMachine} started successfully. Live data feed active.`,
+          type: 'success'
+        });
+      }
+    } catch (err) {
+      if (addToast) {
+        addToast({
+          title: 'Start Command Error',
+          message: err.message,
+          type: 'error'
+        });
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleStopMachine = async () => {
+    setActionLoading('stopping');
+    try {
+      const res = await fetch(`http://127.0.0.1:5000/machine/${selectedMachine}/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to stop machine');
+      if (onRefresh) onRefresh();
+      if (addToast) {
+        addToast({
+          title: `Machine ${selectedMachine} Stopped`,
+          message: `Machine ${selectedMachine} stopped successfully. Telemetry and charts frozen.`,
+          type: 'info'
+        });
+      }
+    } catch (err) {
+      if (addToast) {
+        addToast({
+          title: 'Stop Command Error',
+          message: err.message,
+          type: 'error'
+        });
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   // -------------------------------------------------------------------------
   // 🔴 LIVE MACHINE CONDITION & TELEMETRY REPORT STREAM ENGINE
@@ -44,6 +105,14 @@ const MachineDetails = ({ machineId, fleetData, onRefresh, onBack, onNavigateMac
   // -------------------------------------------------------------------------
   const [isLiveStreaming, setIsLiveStreaming] = useState(true);
   const [streamTick, setStreamTick] = useState(0);
+  const tickRef = useRef(0);
+
+  const generateReportId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return `rep-${crypto.randomUUID()}`;
+    }
+    return `rep-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  };
 
   // Initialize with the most recent baseline reports (newest at index 0)
   const [liveReportList, setLiveReportList] = useState(() => {
@@ -59,7 +128,7 @@ const MachineDetails = ({ machineId, fleetData, onRefresh, onBack, onNavigateMac
       const health = Math.round(100 - risk);
 
       initial.push({
-        id: `rep-init-${i}`,
+        id: generateReportId(),
         time: timeStr,
         temp_c: temp,
         rpm: rpm,
@@ -75,76 +144,80 @@ const MachineDetails = ({ machineId, fleetData, onRefresh, onBack, onNavigateMac
   });
 
   // Stream loop: Every 3.0s generate a new live sensor reading, process it, and prepend to top (index 0)
+  // Pauses automatically if machine is stopped or failed
   useEffect(() => {
     if (!isLiveStreaming) return;
+    if (machineData?.is_stopped || machineData?.status === 'Stopped' || machineData?.is_failed) return;
 
     const interval = setInterval(() => {
-      setStreamTick((prevTick) => {
-        const nextTick = prevTick + 1;
-        const cycle = nextTick % 30;
+      tickRef.current += 1;
+      const currentTick = tickRef.current;
+      setStreamTick(currentTick);
 
-        // Realistic continuous sensor variations
-        let temp = 68.5;
-        let torque = 42.0;
-        let rpm = 1520;
-        let wear = 82.0 + nextTick * 0.2;
-        let risk = 5.0;
-        let status = 'Healthy';
-        let assessment = 'Nominal operating state: Parameters within design baselines.';
+      const cycle = currentTick % 30;
 
-        if (cycle < 12) {
-          // Healthy nominal condition
-          temp = Number((68.0 + (cycle / 12) * 2.5 + (Math.random() * 0.4 - 0.2)).toFixed(1));
-          torque = Number((41.5 + (cycle / 12) * 2.0 + (Math.random() * 0.4 - 0.2)).toFixed(1));
-          rpm = Math.round(1525 - (cycle / 12) * 15 + (Math.random() * 6 - 3));
-          risk = Number((4.2 + (cycle / 12) * 2.5).toFixed(1));
-          status = 'Healthy';
-          assessment = 'Nominal operating condition: Optimal tool sharpness and spindle speed balance.';
-        } else if (cycle < 22) {
-          // Warning drift condition
-          const progress = (cycle - 12) / 10;
-          temp = Number((72.0 + progress * 5.0 + (Math.random() * 0.5 - 0.25)).toFixed(1));
-          torque = Number((45.0 + progress * 8.0 + (Math.random() * 0.5 - 0.25)).toFixed(1));
-          rpm = Math.round(1495 - progress * 50 + (Math.random() * 6 - 3));
-          risk = Number((18.5 + progress * 16.0).toFixed(1));
-          status = 'Warning';
-          assessment = `Parameter drift detected: Elevated torque (${torque} Nm) and rising heat dissipation (${temp} °C).`;
-        } else {
-          // Peak load / recovery
-          const progress = (cycle - 22) / 8;
-          temp = Number((77.0 - progress * 8.5).toFixed(1));
-          torque = Number((53.0 - progress * 11.0).toFixed(1));
-          rpm = Math.round(1445 + progress * 75);
-          risk = Number((34.5 - progress * 29.0).toFixed(1));
-          status = risk >= 18 ? 'Warning' : 'Healthy';
-          assessment = 'Thermal load moderating: Heat sink dispersing thermal energy back towards baseline.';
-        }
+      // Realistic continuous sensor variations
+      let temp = 68.5;
+      let torque = 42.0;
+      let rpm = 1520;
+      let wear = 82.0 + currentTick * 0.2;
+      let risk = 5.0;
+      let status = 'Healthy';
+      let assessment = 'Nominal operating state: Parameters within design baselines.';
 
-        const health = Math.max(0, Math.min(100, Math.round(100 - risk)));
-        const timeStr = new Date().toLocaleTimeString();
+      if (cycle < 12) {
+        // Healthy nominal condition
+        temp = Number((68.0 + (cycle / 12) * 2.5 + (Math.random() * 0.4 - 0.2)).toFixed(1));
+        torque = Number((41.5 + (cycle / 12) * 2.0 + (Math.random() * 0.4 - 0.2)).toFixed(1));
+        rpm = Math.round(1525 - (cycle / 12) * 15 + (Math.random() * 6 - 3));
+        risk = Number((4.2 + (cycle / 12) * 2.5).toFixed(1));
+        status = 'Healthy';
+        assessment = 'Nominal operating condition: Optimal tool sharpness and spindle speed balance.';
+      } else if (cycle < 22) {
+        // Warning drift condition
+        const progress = (cycle - 12) / 10;
+        temp = Number((72.0 + progress * 5.0 + (Math.random() * 0.5 - 0.25)).toFixed(1));
+        torque = Number((45.0 + progress * 8.0 + (Math.random() * 0.5 - 0.25)).toFixed(1));
+        rpm = Math.round(1495 - progress * 50 + (Math.random() * 6 - 3));
+        risk = Number((18.5 + progress * 16.0).toFixed(1));
+        status = 'Warning';
+        assessment = `Parameter drift detected: Elevated torque (${torque} Nm) and rising heat dissipation (${temp} °C).`;
+      } else {
+        // Peak load / recovery
+        const progress = (cycle - 22) / 8;
+        temp = Number((77.0 - progress * 8.5).toFixed(1));
+        torque = Number((53.0 - progress * 11.0).toFixed(1));
+        rpm = Math.round(1445 + progress * 75);
+        risk = Number((34.5 - progress * 29.0).toFixed(1));
+        status = risk >= 18 ? 'Warning' : 'Healthy';
+        assessment = 'Thermal load moderating: Heat sink dispersing thermal energy back towards baseline.';
+      }
 
-        const newReport = {
-          id: `rep-${Date.now()}`,
-          time: timeStr,
-          temp_c: temp,
-          rpm: rpm,
-          torque: torque,
-          tool_wear: Number(wear.toFixed(1)),
-          health: health,
-          failure_risk: risk,
-          status: status,
-          condition_assessment: assessment
-        };
+      const health = Math.max(0, Math.min(100, Math.round(100 - risk)));
+      const timeStr = new Date().toLocaleTimeString();
 
-        // PREPEND NEW REPORT TO TOP FIRST ROW (0th index), OLD ROWS SHIFT DOWN
-        setLiveReportList((prev) => [newReport, ...prev.slice(0, 24)]);
+      const newReport = {
+        id: generateReportId(),
+        time: timeStr,
+        temp_c: temp,
+        rpm: rpm,
+        torque: torque,
+        tool_wear: Number(wear.toFixed(1)),
+        health: health,
+        failure_risk: risk,
+        status: status,
+        condition_assessment: assessment
+      };
 
-        return nextTick;
+      // PREPEND NEW REPORT TO TOP FIRST ROW (0th index), OLD ROWS SHIFT DOWN WITH DEDUPLICATION
+      setLiveReportList((prev) => {
+        const filtered = prev.filter((r) => r.id !== newReport.id);
+        return [newReport, ...filtered.slice(0, 24)];
       });
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [isLiveStreaming]);
+  }, [isLiveStreaming, machineData?.is_stopped, machineData?.status, machineData?.is_failed]);
 
   const handlePerformMaintenance = async () => {
     setIsMaintaining(true);
@@ -230,6 +303,13 @@ const MachineDetails = ({ machineId, fleetData, onRefresh, onBack, onNavigateMac
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold tracking-tight text-slate-900 font-mono">{id}: {name}</h1>
               <StatusBadge status={status} size="sm" />
+              <span className={`text-[11px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+                status === 'Stopped' || machineData.is_stopped
+                  ? 'bg-slate-200 text-slate-800 border border-slate-300'
+                  : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+              }`}>
+                Machine Status: {status === 'Stopped' || machineData.is_stopped ? 'STOPPED' : 'RUNNING'}
+              </span>
             </div>
             <p className="text-xs text-slate-500 font-mono mt-0.5">
               Type {type} Industrial Asset • Updated: {last_updated?.split(' ')[1] || last_updated}
@@ -237,24 +317,46 @@ const MachineDetails = ({ machineId, fleetData, onRefresh, onBack, onNavigateMac
           </div>
         </div>
 
-        {/* Machine Navigation Pills */}
-        <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-2">Select:</span>
-          {machinesList.map((mId) => (
+        {/* Machine Navigation Pills & Machine Start/Stop Action */}
+        <div className="flex flex-wrap items-center gap-3">
+          {status === 'Stopped' || machineData.is_stopped ? (
             <button
-              key={mId}
-              onClick={() => {
-                setSelectedMachine(mId);
-                if (onNavigateMachine) onNavigateMachine(mId);
-              }}
-              className={`px-2.5 py-1 rounded text-xs font-mono font-medium transition-colors ${selectedMachine === mId
-                ? 'bg-slate-900 text-white'
-                : 'text-slate-600 hover:bg-slate-100'
-                }`}
+              onClick={handleStartMachine}
+              disabled={actionLoading === 'starting'}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition disabled:opacity-50"
             >
-              {mId}
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>{actionLoading === 'starting' ? 'Starting...' : 'Start Machine'}</span>
             </button>
-          ))}
+          ) : (
+            <button
+              onClick={handleStopMachine}
+              disabled={actionLoading === 'stopping'}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold shadow-sm transition disabled:opacity-50"
+            >
+              <Pause className="w-3.5 h-3.5" />
+              <span>{actionLoading === 'stopping' ? 'Stopping...' : 'Stop Machine'}</span>
+            </button>
+          )}
+
+          <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-slate-200 shadow-sm overflow-x-auto">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-2">Select:</span>
+            {machinesList.map((mId) => (
+              <button
+                key={mId}
+                onClick={() => {
+                  setSelectedMachine(mId);
+                  if (onNavigateMachine) onNavigateMachine(mId);
+                }}
+                className={`px-2.5 py-1 rounded text-xs font-mono font-medium transition-colors ${selectedMachine === mId
+                  ? 'bg-slate-900 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+              >
+                {mId}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -281,11 +383,13 @@ const MachineDetails = ({ machineId, fleetData, onRefresh, onBack, onNavigateMac
         </div>
 
         <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-sm">
-          <div className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">Current Status</div>
+          <div className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">Operational Status</div>
           <div className="mt-1.5">
             <StatusBadge status={status} size="sm" />
           </div>
-          <div className="text-[10px] text-slate-500 font-mono mt-2">{is_failed ? 'Offline' : 'Online'}</div>
+          <div className="text-[10px] text-slate-500 font-mono mt-2">
+            {status === 'Stopped' || machineData.is_stopped ? '■ STOPPED' : is_failed ? '⚫ FAILED' : '● RUNNING'}
+          </div>
         </div>
 
         <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-sm">
@@ -773,6 +877,7 @@ const MachineDetails = ({ machineId, fleetData, onRefresh, onBack, onNavigateMac
               onClick={() => {
                 setLiveReportList([]);
                 setStreamTick(0);
+                tickRef.current = 0;
               }}
               className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded text-xs font-medium transition"
               title="Clear logged reports"
