@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
+import FleetOverview from './pages/FleetOverview';
 import LiveMonitoring from './pages/LiveMonitoring';
 import MachineDetails from './pages/MachineDetails';
 import Comparison from './pages/Comparison';
@@ -103,6 +104,18 @@ function App() {
             error={error}
             onRefresh={fetchFleet}
             onSelectMachine={handleSelectMachine}
+            onNavigateFleet={() => setCurrentPage('fleet-overview')}
+            addToast={addToast}
+          />
+        );
+      case 'fleet-overview':
+        return (
+          <FleetOverview
+            fleetData={fleetData}
+            isLoading={isLoading}
+            error={error}
+            onRefresh={fetchFleet}
+            onSelectMachine={handleSelectMachine}
             addToast={addToast}
           />
         );
@@ -123,7 +136,7 @@ function App() {
             machineId={selectedMachineId}
             fleetData={fleetData}
             onRefresh={fetchFleet}
-            onBack={() => setCurrentPage('dashboard')}
+            onBack={() => setCurrentPage('fleet-overview')}
             onNavigateMachine={(mId) => setSelectedMachineId(mId)}
             addToast={addToast}
           />
@@ -140,6 +153,7 @@ function App() {
             error={error}
             onRefresh={fetchFleet}
             onSelectMachine={handleSelectMachine}
+            onNavigateFleet={() => setCurrentPage('fleet-overview')}
             addToast={addToast}
           />
         );

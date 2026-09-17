@@ -11,9 +11,10 @@ import {
 
 const Sidebar = ({ currentPage, setCurrentPage, fleetSummary, selectedMachineId }) => {
   const menuItems = [
-    { id: 'dashboard', name: 'Fleet Overview', icon: LayoutDashboard },
+    { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
+    { id: 'fleet-overview', name: 'Fleet Overview', icon: Cpu },
     { id: 'live-monitoring', name: 'Live Monitoring', icon: Activity },
-    { id: 'machine-details', name: 'Machine Diagnostics', icon: Cpu, badge: selectedMachineId },
+    { id: 'machine-details', name: 'Machine Diagnostics', icon: Wrench, badge: selectedMachineId },
     { id: 'comparison', name: 'Model Comparison', icon: Sliders },
     { id: 'analytics', name: 'Dataset Analysis', icon: BarChart3 }
   ];

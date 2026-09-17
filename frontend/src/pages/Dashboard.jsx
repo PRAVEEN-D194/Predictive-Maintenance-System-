@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -6,85 +6,27 @@ import {
   AlertOctagon,
   RefreshCw,
   ArrowRight,
-  Database,
-  Cpu,
-  Wrench,
+  Server,
+  Square,
   ShieldAlert,
-  Play,
-  Square
+  Bell,
+  Clock
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 
-const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine, addToast }) => {
-  const [actionLoading, setActionLoading] = useState({});
-
-  const handleStartMachine = async (e, machineId) => {
-    if (e) e.stopPropagation();
-    setActionLoading((prev) => ({ ...prev, [machineId]: 'starting' }));
-    try {
-      const res = await fetch(`http://127.0.0.1:5000/machine/${machineId}/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to start machine');
-      if (onRefresh) onRefresh();
-      if (addToast) {
-        addToast({
-          title: `Machine ${machineId} Started`,
-          message: `Machine ${machineId} started successfully. Live telemetry resumed.`,
-          type: 'success'
-        });
-      }
-    } catch (err) {
-      if (addToast) {
-        addToast({
-          title: 'Start Command Error',
-          message: err.message,
-          type: 'error'
-        });
-      }
-    } finally {
-      setActionLoading((prev) => ({ ...prev, [machineId]: null }));
-    }
-  };
-
-  const handleStopMachine = async (e, machineId) => {
-    if (e) e.stopPropagation();
-    setActionLoading((prev) => ({ ...prev, [machineId]: 'stopping' }));
-    try {
-      const res = await fetch(`http://127.0.0.1:5000/machine/${machineId}/stop`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to stop machine');
-      if (onRefresh) onRefresh();
-      if (addToast) {
-        addToast({
-          title: `Machine ${machineId} Stopped`,
-          message: `Machine ${machineId} stopped successfully. Telemetry paused.`,
-          type: 'info'
-        });
-      }
-    } catch (err) {
-      if (addToast) {
-        addToast({
-          title: 'Stop Command Error',
-          message: err.message,
-          type: 'error'
-        });
-      }
-    } finally {
-      setActionLoading((prev) => ({ ...prev, [machineId]: null }));
-    }
-  };
-
+const Dashboard = ({
+  fleetData,
+  isLoading,
+  error,
+  onRefresh,
+  onSelectMachine,
+  onNavigateFleet
+}) => {
   if (isLoading && !fleetData) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 min-h-screen">
         <RefreshCw className="w-8 h-8 text-blue-600 animate-spin mb-3" />
-        <p className="text-sm font-medium text-slate-500 font-mono">Synchronizing Fleet Diagnostics...</p>
+        <p className="text-sm font-medium text-slate-500 font-mono">Loading Dashboard...</p>
       </div>
     );
   }
@@ -98,7 +40,7 @@ const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine, ad
           <p className="text-xs text-slate-600 mb-4">{error}</p>
           <button
             onClick={onRefresh}
-            className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800"
+            className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition"
           >
             Reconnect
           </button>
@@ -107,40 +49,132 @@ const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine, ad
     );
   }
 
-  const { summary, machines, critical_machines, failed_machines, stopped_machines, timestamp } = fleetData || {
-    summary: { total_machines: 5, working_machines: 3, warning_machines: 1, critical_machines: 1, failed_machines: 0, stopped_machines: 0, fleet_health: 68 },
-    machines: [],
-    critical_machines: [],
-    failed_machines: [],
-    stopped_machines: [],
-    timestamp: ''
-  };
+  const {
+    summary = {
+      total_machines: 0,
+      working_machines: 0,
+      running_machines: 0,
+      warning_machines: 0,
+      critical_machines: 0,
+      stopped_machines: 0,
+      fleet_health: 0
+    },
+    critical_machines = [],
+    machines = [],
+    timestamp = ''
+  } = fleetData || {};
 
-  const kpis = [
-    { label: 'Total Machines', value: summary.total_machines, icon: Database, color: 'text-slate-900', border: 'border-slate-200' },
-    { label: 'Running Machines', value: summary.running_machines !== undefined ? summary.running_machines : summary.working_machines, icon: CheckCircle2, color: 'text-emerald-700', border: 'border-emerald-200 bg-emerald-50/40' },
-    { label: 'Critical Machines', value: summary.critical_machines, icon: AlertOctagon, color: 'text-rose-700', border: summary.critical_machines > 0 ? 'border-rose-200 bg-rose-50/50' : 'border-slate-200' },
-    { label: 'Warning Machines', value: summary.warning_machines, icon: AlertTriangle, color: 'text-amber-700', border: summary.warning_machines > 0 ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200' },
-    { label: 'Stopped Machines', value: summary.stopped_machines || 0, icon: Square, color: 'text-slate-600', border: 'border-slate-200 bg-slate-100/60' },
-    { label: 'Fleet Health Score', value: `${summary.fleet_health}%`, icon: Activity, color: 'text-blue-700', border: 'border-blue-200 bg-blue-50/40' }
+  const runningCount = summary.running_machines ?? summary.working_machines ?? 0;
+  const stoppedCount = summary.stopped_machines ?? 0;
+  const warningCount = summary.warning_machines ?? 0;
+  const criticalCount = summary.critical_machines ?? 0;
+  const totalCount = summary.total_machines ?? machines.length ?? 0;
+  const fleetHealth = summary.fleet_health ?? 0;
+
+  // Simple KPI summary cards
+  const kpiCards = [
+    {
+      label: 'Total Machines',
+      value: totalCount,
+      icon: Server,
+      color: 'text-slate-900',
+      bg: 'bg-white',
+      border: 'border-slate-200'
+    },
+    {
+      label: 'Running',
+      value: runningCount,
+      icon: CheckCircle2,
+      color: 'text-emerald-700',
+      bg: 'bg-white',
+      border: 'border-slate-200'
+    },
+    {
+      label: 'Warning',
+      value: warningCount,
+      icon: AlertTriangle,
+      color: 'text-amber-700',
+      bg: 'bg-white',
+      border: warningCount > 0 ? 'border-amber-300' : 'border-slate-200'
+    },
+    {
+      label: 'Critical',
+      value: criticalCount,
+      icon: AlertOctagon,
+      color: 'text-rose-700',
+      bg: 'bg-white',
+      border: criticalCount > 0 ? 'border-rose-300' : 'border-slate-200'
+    },
+    {
+      label: 'Stopped',
+      value: stoppedCount,
+      icon: Square,
+      color: 'text-slate-600',
+      bg: 'bg-white',
+      border: 'border-slate-200'
+    },
+    {
+      label: 'Fleet Health',
+      value: `${fleetHealth}%`,
+      icon: Activity,
+      color: 'text-blue-700',
+      bg: 'bg-white',
+      border: 'border-slate-200'
+    }
   ];
+
+  // Derive recent alerts from fleet status
+  const recentAlerts = [];
+  machines.forEach((m) => {
+    if (m.status === 'Critical') {
+      recentAlerts.push({
+        id: `alert-${m.id}-crit`,
+        machineId: m.id,
+        machineName: m.name,
+        severity: 'critical',
+        title: 'Critical Risk Threshold',
+        message: `${m.recommendations?.problem_title || 'High failure risk detected'} (${m.failure_probability}% risk)`,
+        time: timestamp ? timestamp.split(' ')[1] || 'Just now' : 'Just now'
+      });
+    } else if (m.status === 'Warning') {
+      recentAlerts.push({
+        id: `alert-${m.id}-warn`,
+        machineId: m.id,
+        machineName: m.name,
+        severity: 'warning',
+        title: 'Thermal / Load Warning',
+        message: `${m.recommendations?.problem_title || 'Elevated sensor telemetry'} (${m.failure_probability}% risk)`,
+        time: timestamp ? timestamp.split(' ')[1] || 'Just now' : 'Just now'
+      });
+    } else if (m.status === 'Stopped' || m.is_stopped) {
+      recentAlerts.push({
+        id: `alert-${m.id}-stop`,
+        machineId: m.id,
+        machineName: m.name,
+        severity: 'info',
+        title: 'Machine Stopped',
+        message: `Machine safely stopped by operator.`,
+        time: timestamp ? timestamp.split(' ')[1] || 'Just now' : 'Just now'
+      });
+    }
+  });
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 text-slate-800 p-6 max-w-7xl mx-auto w-full space-y-6">
-      {/* Header */}
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900">
-            Fleet Health & Diagnostic Command Center
+            Dashboard
           </h1>
           <p className="text-xs text-slate-500 font-mono mt-0.5">
-            AI-powered predictive condition monitoring • AI4I 2020 dataset model engine
+            Fleet condition and operational health summary
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-mono text-slate-400">
-            Telemetry: {timestamp?.split(' ')[1] || timestamp}
+        <div className="flex items-center gap-2.5">
+          <span className="text-xs font-mono text-slate-400 hidden sm:inline">
+            {timestamp ? timestamp.split(' ')[1] || timestamp : ''}
           </span>
           <button
             onClick={onRefresh}
@@ -152,20 +186,20 @@ const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine, ad
         </div>
       </div>
 
-      {/* 1. Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {kpis.map((kpi, idx) => {
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+        {kpiCards.map((kpi, idx) => {
           const Icon = kpi.icon;
           return (
             <div
               key={idx}
-              className={`p-3.5 bg-white rounded-lg border shadow-sm ${kpi.border}`}
+              className={`p-4 rounded-xl border shadow-sm ${kpi.bg} ${kpi.border} flex flex-col justify-between`}
             >
-              <div className="flex items-center justify-between text-slate-400 mb-1">
-                <span className="text-[10px] uppercase font-semibold tracking-wider text-slate-500">{kpi.label}</span>
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-xs font-medium text-slate-500">{kpi.label}</span>
                 <Icon className="w-4 h-4 text-slate-400" />
               </div>
-              <div className={`text-2xl font-bold font-mono ${kpi.color}`}>
+              <div className={`text-3xl font-bold font-mono tracking-tight ${kpi.color}`}>
                 {kpi.value}
               </div>
             </div>
@@ -173,253 +207,136 @@ const Dashboard = ({ fleetData, isLoading, error, onRefresh, onSelectMachine, ad
         })}
       </div>
 
-      {/* 6. Critical Machines Section */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-rose-600" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              🚨 Critical Machines Requiring Immediate Action
-            </h2>
-          </div>
-          <span className="text-xs font-mono text-slate-500">{critical_machines.length} active risk(s)</span>
-        </div>
-
-        {critical_machines.length === 0 ? (
-          <div className="bg-white p-4 rounded-lg border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2.5 shadow-sm font-medium">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>✓ No critical machines detected. All active equipment operating within safe bounds.</span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {critical_machines.map((m) => (
-              <div
-                key={m.id}
-                className="bg-white rounded-lg border-2 border-rose-300 p-4 shadow-sm space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-slate-900 text-sm">{m.id}</span>
-                    <span className="text-xs text-slate-600 font-medium">({m.name})</span>
-                  </div>
-                  <StatusBadge status="Critical" size="sm" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 bg-rose-50/60 p-2.5 rounded border border-rose-100 text-xs">
-                  <div>
-                    <span className="text-[10px] uppercase font-semibold text-rose-700 block">Failure Risk</span>
-                    <span className="text-base font-bold font-mono text-rose-800">{m.failure_probability}%</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-semibold text-rose-700 block">Health Score</span>
-                    <span className="text-base font-bold font-mono text-rose-800">{m.health_score}%</span>
-                  </div>
-                </div>
-
-                <div className="text-xs space-y-1">
-                  <div className="text-slate-700">
-                    <strong className="text-slate-900">Main Problem:</strong> {m.recommendations?.problem_title || 'Elevated load and tool wear'}
-                  </div>
-                  <div className="text-slate-700">
-                    <strong className="text-slate-900">Recommended Action:</strong> {m.recommendations?.recommended_action}
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[11px] font-mono text-slate-500">
-                    Window: {m.recommendations?.maintenance_window}
-                  </span>
-                  <button
-                    onClick={() => onSelectMachine(m.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition"
-                  >
-                    <span>Analyze Failure & Solutions</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 2. Machine Overview Section */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-slate-700" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              Fleet Machine Overview
-            </h2>
-          </div>
-          <span className="text-xs font-mono text-slate-500">Click any machine card for live diagnostics</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {machines.map((m) => (
-            <div
-              key={m.id}
-              onClick={() => onSelectMachine(m.id)}
-              className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:border-slate-400 hover:shadow-md transition cursor-pointer space-y-3 group"
-            >
-              {/* Card Header */}
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono font-bold text-slate-900 text-sm">{m.id}</span>
-                    <span className="text-[11px] text-slate-500 font-mono">Type {m.type}</span>
-                  </div>
-                  <div className="text-xs text-slate-600 font-medium truncate max-w-[180px]">{m.name}</div>
-                </div>
-                <StatusBadge status={m.status} size="sm" />
-              </div>
-
-              {/* Machine Individual Run/Stop Control Banner */}
-              <div className="flex items-center justify-between bg-slate-50/80 px-2.5 py-1.5 rounded-md border border-slate-200/80 text-xs">
-                {m.status === 'Stopped' || m.is_stopped ? (
-                  <div className="flex items-center gap-1.5 font-medium text-slate-600 font-mono text-[11px]">
-                    <span className="w-2 h-2 rounded-[2px] bg-slate-500" />
-                    <span>■ Stopped</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 font-medium text-emerald-700 font-mono text-[11px]">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>● Running</span>
-                  </div>
-                )}
-
-                {m.status === 'Stopped' || m.is_stopped ? (
-                  <button
-                    onClick={(e) => handleStartMachine(e, m.id)}
-                    disabled={actionLoading[m.id] === 'starting'}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold shadow-xs transition disabled:opacity-50"
-                  >
-                    <Play className="w-3 h-3 fill-current" />
-                    <span>{actionLoading[m.id] === 'starting' ? 'Starting...' : 'Start Machine'}</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={(e) => handleStopMachine(e, m.id)}
-                    disabled={actionLoading[m.id] === 'stopping'}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-slate-700 border border-slate-300 rounded text-xs font-semibold transition disabled:opacity-50"
-                  >
-                    <Square className="w-3 h-3 fill-current" />
-                    <span>{actionLoading[m.id] === 'stopping' ? 'Stopping...' : 'Stop Machine'}</span>
-                  </button>
-                )}
-              </div>
-
-              {/* KPI Metrics */}
-              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded border border-slate-100">
-                <div>
-                  <span className="text-[10px] uppercase font-semibold text-slate-400 block">Health</span>
-                  <span className="text-sm font-bold font-mono text-slate-900">{m.health_score}%</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-semibold text-slate-400 block">Failure Risk</span>
-                  <span className={`text-sm font-bold font-mono ${
-                    m.failure_probability > 50 ? 'text-rose-600' : m.failure_probability > 20 ? 'text-amber-600' : 'text-slate-900'
-                  }`}>
-                    {m.failure_probability}%
-                  </span>
-                </div>
-              </div>
-
-              {/* Sensor Readings */}
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Temperature:</span>
-                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values?.air_temperature_c ?? '--'}°C</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Speed:</span>
-                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values?.rotational_speed ?? '--'} RPM</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Torque:</span>
-                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values?.torque ?? '--'} Nm</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Tool Wear:</span>
-                  <span className="font-mono font-semibold text-slate-800">{m.sensor_values?.tool_wear ?? '--'} min</span>
-                </div>
-              </div>
-
-              {/* Operating Condition & Link */}
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                <span className="truncate max-w-[190px] font-medium text-slate-700">
-                  {m.recommendations?.working_condition?.replace(/[🟢🟡🔴⚫]/g, '').trim()}
-                </span>
-                <span className="group-hover:translate-x-1 transition-transform text-slate-900 font-semibold flex items-center gap-1 font-mono">
-                  Diagnostics →
-                </span>
-              </div>
+      {/* Main Grid: Critical Machines (Left) & Recent Alerts (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Small Critical Machines Section */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-600" />
+              <h2 className="text-sm font-bold text-slate-900">
+                Critical Machines
+              </h2>
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 12. Not Working Section */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Wrench className="w-4 h-4 text-slate-800" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              ⚫ Not Working / Stopped Machines
-            </h2>
+            <span className={`text-xs font-mono px-2 py-0.5 rounded-full font-semibold ${
+              critical_machines.length > 0
+                ? 'bg-rose-100 text-rose-700'
+                : 'bg-emerald-100 text-emerald-700'
+            }`}>
+              {critical_machines.length} Critical
+            </span>
           </div>
-          <span className="text-xs font-mono text-slate-500">{failed_machines.length} offline asset(s)</span>
-        </div>
 
-        {failed_machines.length === 0 ? (
-          <div className="bg-white p-4 rounded-lg border border-slate-200 text-slate-600 text-xs flex items-center gap-2 shadow-sm">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>All fleet machines are currently operational and online.</span>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {failed_machines.map((fm) => (
-              <div
-                key={fm.id}
-                className="bg-white rounded-lg border border-slate-300 p-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
-              >
-                <div className="space-y-1.5 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-slate-900 text-sm">{fm.id}: {fm.name}</span>
-                    <StatusBadge status="Failed" size="sm" />
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
-                      {fm.failure_type || 'Protective Cutoff'}
+          {critical_machines.length === 0 ? (
+            <div className="p-4 bg-emerald-50/50 rounded-lg border border-emerald-100 flex items-center gap-2.5 text-xs text-emerald-800 font-medium">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>All machines operating within normal parameters.</span>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {critical_machines.map((m) => (
+                <div
+                  key={m.id}
+                  className="p-3.5 rounded-lg border border-rose-200 bg-rose-50/40 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-slate-900 text-sm">{m.id}</span>
+                      <span className="text-xs text-slate-600 font-medium truncate max-w-[160px]">{m.name}</span>
+                    </div>
+                    <StatusBadge status="Critical" size="sm" />
+                  </div>
+
+                  <div className="flex items-center gap-4 text-xs font-mono">
+                    <span className="text-slate-600">
+                      Health: <strong className="text-slate-900">{m.health_score}%</strong>
+                    </span>
+                    <span className="text-slate-600">
+                      Risk: <strong className="text-rose-700">{m.failure_probability}%</strong>
                     </span>
                   </div>
 
-                  <div className="text-xs text-slate-600">
-                    <strong>Reason:</strong> {fm.failure_reason || 'Critical sensor threshold exceeded.'}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 font-mono">
-                    <span>Shutdown Time: <strong>{fm.failure_time || '10:42 AM'}</strong></span>
-                    {fm.last_known_sensor_values && (
-                      <span>
-                        Last Telemetry: {fm.last_known_sensor_values.air_temperature} K • {fm.last_known_sensor_values.tool_wear} min wear • {fm.last_known_sensor_values.torque} Nm
-                      </span>
-                    )}
-                    <span>Maintenance: <strong className="text-rose-700">🔧 Required</strong></span>
+                  <div className="pt-2 border-t border-rose-100 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-500 truncate max-w-[200px]">
+                      {m.recommendations?.problem_title || 'Elevated load and tool wear'}
+                    </span>
+                    <button
+                      onClick={() => onSelectMachine && onSelectMachine(m.id)}
+                      className="flex items-center gap-1 text-xs font-semibold text-rose-700 hover:text-rose-800 font-mono transition"
+                    >
+                      <span>View Details</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-                <div className="shrink-0 flex items-center gap-2">
-                  <button
-                    onClick={() => onSelectMachine(fm.id)}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition shadow-sm"
-                  >
-                    <span>View Failure Analysis</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+        {/* Small Recent Alerts Section */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Bell className="w-4 h-4 text-slate-700" />
+              <h2 className="text-sm font-bold text-slate-900">
+                Recent Alerts
+              </h2>
+            </div>
+            <span className="text-xs font-mono text-slate-400">
+              {recentAlerts.length} Event{recentAlerts.length === 1 ? '' : 's'}
+            </span>
           </div>
-        )}
+
+          {recentAlerts.length === 0 ? (
+            <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 text-xs text-slate-500 text-center">
+              No recent alerts or anomalous conditions.
+            </div>
+          ) : (
+            <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+              {recentAlerts.slice(0, 5).map((alert) => {
+                let badgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                if (alert.severity === 'critical') badgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
+                if (alert.severity === 'warning') badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
+                if (alert.severity === 'info') badgeClass = 'bg-blue-50 text-blue-700 border-blue-200';
+
+                return (
+                  <div
+                    key={alert.id}
+                    className="p-3 rounded-lg border border-slate-100 bg-slate-50/60 flex items-start justify-between gap-3 text-xs"
+                  >
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-slate-900">{alert.machineId}</span>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${badgeClass}`}>
+                          {alert.title}
+                        </span>
+                      </div>
+                      <p className="text-slate-600 text-xs line-clamp-1">{alert.message}</p>
+                    </div>
+
+                    <div className="flex items-center gap-1 text-[11px] font-mono text-slate-400 shrink-0">
+                      <Clock className="w-3 h-3" />
+                      <span>{alert.time}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {onNavigateFleet && (
+            <div className="pt-2 border-t border-slate-100">
+              <button
+                onClick={onNavigateFleet}
+                className="w-full py-2 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition border border-slate-200"
+              >
+                <span>View Full Fleet Overview</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
